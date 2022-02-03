@@ -4,7 +4,6 @@ from threading import Timer, Lock
 from time import sleep, time
 from typing import Tuple
 
-#test change
 # constant seed makes the random number generator deterministic during testing
 random.seed(398120)
 
