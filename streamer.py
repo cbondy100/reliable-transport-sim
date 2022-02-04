@@ -16,10 +16,10 @@ class Streamer:
         self.dst_ip = dst_ip
         self.dst_port = dst_port
 
-        self.send_seq_num = 0x00000000
+        self.send_seq_num = 0
         self.send_buffer = dict()
 
-        self.rec_seq_num = 0x00000000
+        self.rec_seq_num = 0
         self.rec_buffer = dict()
 
     def send(self, data_bytes: bytes) -> None:
@@ -29,6 +29,8 @@ class Streamer:
         #PART 2: need to add header to these packets:
         #   - add sequence number
         #   - add to send buffer
+
+        #Strategy: keep dictionary (buffer) of packets that are sent
 
         #break data_bytes into multiple chunks and send each one
 
@@ -46,6 +48,9 @@ class Streamer:
         #PART 2: must check sequence number
         #   - only receive packet if next SN
         #   - otherwise lose?
+        #   - check buffer dictionary to see if correct sequence number is present
+        #   - if next SN present, receive packet, otherwise wait
+
         print(self.rec_buffer)
 
 
