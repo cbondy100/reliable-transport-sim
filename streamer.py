@@ -3,6 +3,8 @@ from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
 
+import struct
+
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -14,35 +16,56 @@ class Streamer:
         self.dst_ip = dst_ip
         self.dst_port = dst_port
 
+        self.send_seq_num = 0x00000000
+        self.send_buffer = dict()
+
+        self.rec_seq_num = 0x00000000
+        self.rec_buffer = dict()
+
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
         # Your code goes here!  The code below should be changed!
+        #PART 1: completed
+        #PART 2: need to add header to these packets:
+        #   - add sequence number
+        #   - add to send buffer
 
-        #print(data_bytes[0:1472])
         #break data_bytes into multiple chunks and send each one
-        packetList = []
+
         for i in range(0, len(data_bytes), 1472):
-            self.socket.sendto(data_bytes[0+i:1472+i], (self.dst_ip, self.dst_port))
-
-        #print("PACKET LIST")
-        #print(packetList)
-        #for p in packetList:
-            #print(p)
-        #for packet in packetList:
-        #    self.socket.sendto(packet, (self.dst_ip, self.dst_port))
-
-
-        # for now I'm just sending the raw application-level data in one UDP payload
-        #self.socket.sendto(data_bytes[0:1472], (self.dst_ip, self.dst_port))
+            #multiple chunks of 1472 bytes
+            packet = struct.pack('i' + str(len(data_bytes[0 + i:1472 + i])) + 's', self.send_seq_num, data_bytes[0 + i:1472 + i])
+            self.send_buffer[self.send_seq_num] = packet
+            self.rec_buffer[self.send_seq_num] = packet
+            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+            self.send_seq_num += 1
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
-        
+        #PART 2: must check sequence number
+        #   - only receive packet if next SN
+        #   - otherwise lose?
+        print(self.rec_buffer)
+
+
         # this sample code just calls the recvfrom method on the LossySocket
         data, addr = self.socket.recvfrom()
-        # For now, I'll just pass the full UDP payload to the app
-        return data
+        #if self.rec_seq_num in self.rec_buffer:
+            #print("Correct SN")
+        length = struct.calcsize('i'+ str(len(data)) + 's')
+
+        print(data)
+        print(len(data))
+        packet = struct.unpack('i' + str(length) + 's', data)
+            #self.rec_seq_num += 1
+            #print(packet)
+            # For now, I'll just pass the full UDP payload to the app
+            #return packet[1]
+
+        print("FUCK")
+        return packet[1]
+
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
