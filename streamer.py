@@ -4,7 +4,7 @@ from lossy_socket import LossyUDP
 from socket import INADDR_ANY
 
 import struct
-
+import time
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -17,10 +17,8 @@ class Streamer:
         self.dst_port = dst_port
 
         self.send_seq_num = 0
-        self.send_buffer = dict()
-
         self.rec_seq_num = 0
-        self.rec_buffer = dict()
+        self.rec_buffer = []
 
     def send(self, data_bytes: bytes) -> None:
         """Note that data_bytes can be larger than one packet."""
@@ -34,11 +32,13 @@ class Streamer:
 
         #break data_bytes into multiple chunks and send each one
 
-        for i in range(0, len(data_bytes), 1472):
+        for i in range(0, len(data_bytes), 1468):
             #multiple chunks of 1472 bytes
-            packet = struct.pack('i' + str(len(data_bytes[0 + i:1472 + i])) + 's', self.send_seq_num, data_bytes[0 + i:1472 + i])
-            self.send_buffer[self.send_seq_num] = packet
-            self.rec_buffer[self.send_seq_num] = packet
+            print(len(data_bytes[0+i:1468+i]))
+            len_data = len(data_bytes[0+i:1468+i])
+            packet = struct.pack('i' + str(len_data) + 's', self.send_seq_num, data_bytes[0 + i:1468 + i])
+            #self.send_buffer[self.send_seq_num] = packet
+            #self.rec_buffer[self.send_seq_num] = packet
             self.socket.sendto(packet, (self.dst_ip, self.dst_port))
             self.send_seq_num += 1
 
@@ -51,25 +51,26 @@ class Streamer:
         #   - check buffer dictionary to see if correct sequence number is present
         #   - if next SN present, receive packet, otherwise wait
 
-        print(self.rec_buffer)
-
-
         # this sample code just calls the recvfrom method on the LossySocket
         data, addr = self.socket.recvfrom()
         #if self.rec_seq_num in self.rec_buffer:
             #print("Correct SN")
-        length = struct.calcsize('i'+ str(len(data)) + 's')
 
-        print(data)
-        print(len(data))
-        packet = struct.unpack('i' + str(length) + 's', data)
-            #self.rec_seq_num += 1
-            #print(packet)
-            # For now, I'll just pass the full UDP payload to the app
-            #return packet[1]
+        #have to take away the 4 bytes from our int
+        packet = struct.unpack('i' + str(len(data)-4) + 's', data)
+
+        print(packet)
+
+        self.rec_buffer.append(packet)
+        print(self.rec_buffer)
+
+        while self.rec_seq_num not in self.rec_buffer[:][0]:
+            print("Must wait for sequence number")
+            self.recv()
+
 
         print("FUCK")
-        return packet[1]
+        return packet
 
 
     def close(self) -> None:
