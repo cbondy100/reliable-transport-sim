@@ -52,34 +52,17 @@ class Streamer:
 
         # this sample code just calls the recvfrom method on the LossySocket
         while True:
+            #loop through receive buffer
             for packet in self.rec_buffer:
-                print(packet)
+                #check if seq num matches expected seq num
                 if packet[0] == self.rec_seq_num:
                     # this means our expected packet has arrived
-                    print("send correct packet")
                     self.rec_seq_num += 1
                     return packet[1]
 
             data, addr = self.socket.recvfrom()
             next_packet = struct.unpack('i' + str(len(data) - 4) + 's', data)
             self.rec_buffer.append(next_packet)
-
-        #if self.rec_seq_num in self.rec_buffer:
-            #print("Correct SN")
-
-        #have to take away the 4 bytes from our int
-
-        #print(packet)
-       # print("SHIT")
-        #print(self.rec_buffer)
-        #print(self.rec_buffer[0][0])
-
-
-
-
-        #print("FUCK")
-        #return self.rec_buffer[0][]
-
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
