@@ -37,8 +37,7 @@ class Streamer:
             print(len(data_bytes[0+i:1468+i]))
             len_data = len(data_bytes[0+i:1468+i])
             packet = struct.pack('i' + str(len_data) + 's', self.send_seq_num, data_bytes[0 + i:1468 + i])
-            #self.send_buffer[self.send_seq_num] = packet
-            #self.rec_buffer[self.send_seq_num] = packet
+
             self.socket.sendto(packet, (self.dst_ip, self.dst_port))
             self.send_seq_num += 1
 
@@ -52,25 +51,34 @@ class Streamer:
         #   - if next SN present, receive packet, otherwise wait
 
         # this sample code just calls the recvfrom method on the LossySocket
-        data, addr = self.socket.recvfrom()
+        while True:
+            for packet in self.rec_buffer:
+                print(packet)
+                if packet[0] == self.rec_seq_num:
+                    # this means our expected packet has arrived
+                    print("send correct packet")
+                    self.rec_seq_num += 1
+                    return packet[1]
+
+            data, addr = self.socket.recvfrom()
+            next_packet = struct.unpack('i' + str(len(data) - 4) + 's', data)
+            self.rec_buffer.append(next_packet)
+
         #if self.rec_seq_num in self.rec_buffer:
             #print("Correct SN")
 
         #have to take away the 4 bytes from our int
-        packet = struct.unpack('i' + str(len(data)-4) + 's', data)
 
-        print(packet)
-
-        self.rec_buffer.append(packet)
-        print(self.rec_buffer)
-
-        while self.rec_seq_num not in self.rec_buffer[:][0]:
-            print("Must wait for sequence number")
-            self.recv()
+        #print(packet)
+       # print("SHIT")
+        #print(self.rec_buffer)
+        #print(self.rec_buffer[0][0])
 
 
-        print("FUCK")
-        return packet
+
+
+        #print("FUCK")
+        #return self.rec_buffer[0][]
 
 
     def close(self) -> None:
