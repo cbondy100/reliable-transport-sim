@@ -151,7 +151,7 @@ class Streamer:
         # Wait for acknowledgement every 0.01 secs
         while self.send_seq_num not in self.ack_list:
             #send FIN packet
-            fin_packet = struct.pack('iii' + str(len(bytes())) + 's', self.send_seq_num, 0, 1, bytes())
+            fin_packet = struct.pack('iii' + str(len(bytes())) + 's' + '16s', self.send_seq_num, 0, 1, bytes(), bytes())
             self.socket.sendto(fin_packet, (self.dst_ip, self.dst_port))
 
             #wait for ACK
