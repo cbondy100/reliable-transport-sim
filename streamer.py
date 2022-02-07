@@ -9,6 +9,8 @@ import struct
 import time
 
 # HEADER INFO: (Sequence number, data, acknowledgement(no_ack (0) , ack (1), or fin (2)) )
+# Updated Header structure: (SN, ack (0 or 1), fin (0 or 1), data)
+# this way we only have to pack consistent with one struct
 
 class Streamer:
     def __init__(self, dst_ip, dst_port,
@@ -24,12 +26,13 @@ class Streamer:
         self.rec_seq_num = 0
         self.rec_buffer = []
 
-        self.ack = False
+        #keep list of ACK packets
+        self.ack_list = []
         self.closed = False
 
         # Start a new asynchronous thread with 'listener()' function
-        executor = ThreadPoolExecutor(max_workers=1)
-        executor.submit(self.listener)
+        self.executor = ThreadPoolExecutor(max_workers=1)
+        self.executor.submit(self.listener)
 
 
     def send(self, data_bytes: bytes) -> None:
@@ -40,54 +43,65 @@ class Streamer:
         #   - add sequence number
         #   - add to send buffer
 
-        #Strategy: keep dictionary (buffer) of packets that are sent
+        #Strategy: keep list (buffer) of packets that are sent
 
         #break data_bytes into multiple chunks and send each one
 
-        for i in range(0, len(data_bytes), 1468):
-            #multiple chunks of 1472 bytes
-            print(len(data_bytes[0+i:1468+i]))
-            len_data = len(data_bytes[0+i:1468+i])
-            packet = struct.pack('i' + str(len_data) + 's' + 'i', self.send_seq_num, data_bytes[0 + i:1468 + i], 1) # added '0' indicating its data
-
+        for i in range(0, len(data_bytes), 1460):
+            #multiple chunks of 1472 bytes (account for 12 byte buffer)
+            len_data = len(data_bytes[0+i:1460+i])
+            packet = struct.pack('iii' + str(len_data) + 's', self.send_seq_num, 0, 0, data_bytes[0 + i:1460 + i])
             self.socket.sendto(packet, (self.dst_ip, self.dst_port))
 
             # Wait for acknowledgement every 0.01 secs
-            TIMEOUT = 25
+            timeout = 25
             curr_time = 0
-            while not self.ack:
-                if curr_time == TIMEOUT:
+            while self.send_seq_num not in self.ack_list:
+                #this runs while sent SN is not part of ACK list
+                if curr_time == timeout:
+                    #if no ACK after .25s send again
                     self.socket.sendto(packet, (self.dst_ip, self.dst_port))
                     curr_time = 0
                 time.sleep(0.01)
                 curr_time += 1
             self.send_seq_num += 1
 
-        # self.close()
-
 
     def listener(self):
         while not self.closed:
             try:
-                data, addr = self.socket.recvfrom()
-                # store the data in the receive buffer
-                next_packet = struct.unpack('i' + str(len(data) - 4) + 's' + 'i', data)
-                self.rec_buffer.append(next_packet)
+                #get sent packet
+                packet, addr = self.socket.recvfrom()
+                if packet:
+                    #unpack packet into fields
+                    next_packet = self.unpack_packet(packet)
+                    seq_num = next_packet[0]
+                    ack = next_packet[1]
+                    fin = next_packet[2]
+                    data = next_packet[3]
 
-                if next_packet[-1] == 1:
-                    self.ack = True
-                elif next_packet[-1] == 2:
-                    time.sleep(2)
-                    self.closed = True
-                    self.socket.stoprecv()
+                    if ack == 1:
+                        #this means packet was an ACK, store ACK SN in list
+                        self.ack_list.append(seq_num)
+                    elif fin == 1:
+                        #this means packet was FIN call, send ACK
+                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's', seq_num, 1, 0, bytes())
+                        self.socket.sendto(ack_packet, (self.dst_ip, self.dst_port))
 
-                pkt = struct.pack('ii', self.send_seq_num,1)  # added '1' indicating its ACK
-
-                self.socket.sendto(pkt, addr)
+                    else:
+                        #packet was data, add to rec_buffer and send ACK where there is no data
+                        self.rec_buffer.append(next_packet)
+                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's', seq_num, 1, 0, bytes())
+                        self.socket.sendto(ack_packet, (self.dst_ip, self.dst_port))
 
             except Exception as e:
                 print("listener died!")
                 print(e)
+
+    #seperate unpacking to make it easier and only one unpack call
+    #Header: (SN, ACK, FIN, DATA)
+    def unpack_packet(self, packet):
+        return struct.unpack('iii' + str(len(packet) - 12) + 's', packet)
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
@@ -106,30 +120,32 @@ class Streamer:
                 if packet[0] == self.rec_seq_num:
                     # this means our expected packet has arrived
                     self.rec_seq_num += 1
-                    return packet[1]
+                    return packet[3]
 
-            # DONT NEED THIS ANYMORE: listener() function is our new "buffer creator"
-            # data, addr = self.socket.recvfrom()
-            # next_packet = struct.unpack('i' + str(len(data) - 4) + 's', data)
-            # self.rec_buffer.append(next_packet)
 
     def close(self) -> None:
         """Cleans up. It should block (wait) until the Streamer is done with all
            the necessary ACKs and retransmissions"""
         # your code goes here, especially after you add ACKs and retransmissions.
 
-        pkt = struct.pack('ii', self.send_seq_num, 2)  # added '2' indicating its FIN
-
-        self.socket.sendto(pkt, (self.dst_ip, self.dst_port))
+        timeout = 25
+        curr_time = 0
 
         # Wait for acknowledgement every 0.01 secs
-        TIMEOUT = 25
-        curr_time = 0
-        while not self.ack:
-            if curr_time == TIMEOUT:
-                self.socket.sendto(pkt, (self.dst_ip, self.dst_port))
+        while self.send_seq_num not in self.ack_list:
+            #send FIN packet
+            fin_packet = struct.pack('iii' + str(len(bytes())) + 's', self.send_seq_num, 0, 1, bytes())
+            self.socket.sendto(fin_packet, (self.dst_ip, self.dst_port))
+
+            #wait for ACK
+            if curr_time == timeout:
+                # if no ACK after .25s send again
+                self.socket.sendto(fin_packet, (self.dst_ip, self.dst_port))
                 curr_time = 0
             time.sleep(0.01)
-            curr_time += 1
+            curr_time += 1;
 
+        time.sleep(2)
+        self.closed = True
+        self.socket.stoprecv()
         return
