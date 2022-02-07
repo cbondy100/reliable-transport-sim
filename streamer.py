@@ -50,10 +50,10 @@ class Streamer:
 
         for i in range(0, len(data_bytes), 1444):
             #multiple chunks of 1472 bytes (account for 28 byte buffer)
-            len_data = len(data_bytes[0+i:1444+i])
-            hash_data = self.GetHash(data_bytes) # generate hash from helper function GetHash() -> put in header
-            packet = struct.pack('iii' + str(len_data) + 's' + '16s', self.send_seq_num, 0, 0, data_bytes[0 + i:1444 + i], hash_data)
-            self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+            #len_data = len(data_bytes[0+i:1444+i])
+            #hash_data = self.GetHash(data_bytes) # generate hash from helper function GetHash() -> put in header
+            send_packet = self.form_packet(data_bytes[0 + i:1444 + i], self.send_seq_num, 0, 0)
+            self.socket.sendto(send_packet, (self.dst_ip, self.dst_port))
 
             # Wait for acknowledgement every 0.01 secs
             timeout = 25
@@ -62,7 +62,7 @@ class Streamer:
                 #this runs while sent SN is not part of ACK list
                 if curr_time == timeout:
                     #if no ACK after .25s send again
-                    self.socket.sendto(packet, (self.dst_ip, self.dst_port))
+                    self.socket.sendto(send_packet, (self.dst_ip, self.dst_port))
                     curr_time = 0
                 time.sleep(0.01)
                 curr_time += 1
@@ -76,33 +76,42 @@ class Streamer:
                 packet, addr = self.socket.recvfrom()
                 if packet:
                     #unpack packet into fields
+                    #print("before unpacking")
                     next_packet = self.unpack_packet(packet)
+                    #print("after unpacking")
                     seq_num = next_packet[0]
                     ack = next_packet[1]
                     fin = next_packet[2]
                     data = next_packet[3]
                     hash_data = next_packet[4]
 
+                    #create new packet to compare to the hash_data packet (since we hashed entire packet)
+                    c_packet = struct.pack('iii' + str(len(data)) + 's', seq_num, ack, fin, data)
+                    c_hash_data = self.GetHash(c_packet)
+
+                    # need to check hash, if it fails, skip below code
+                    # this will cause a timeout to occur and the send() function to resend packet
+                    # checks if our hash codes are the same
+                    if hash_data != c_hash_data:
+                        continue
+
                     if ack == 1:
                         #this means packet was an ACK, store ACK SN in list
                         self.ack_list.append(seq_num)
+
                     elif fin == 1:
                         #this means packet was FIN call, send ACK
-                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's' + '16s', seq_num, 1, 0, bytes(), bytes())
-                        self.socket.sendto(ack_packet, (self.dst_ip, self.dst_port))
+                        #form packet with ACK flag enabled
+                        send_packet = self.form_packet(bytes(), seq_num, 1, 0)
+                        self.socket.sendto(send_packet, (self.dst_ip, self.dst_port))
 
                     else:
                         #packet was data, add to rec_buffer and send ACK where there is no data
 
-                        # BEFORE we do the above step: need to check hash, if it fails, skip below code
-                        # this will cause a timeout to occur and the send() function to resend packet
-                        hs = self.GetHash(data)
-                        if hash_data != hs:
-                            continue
-
                         self.rec_buffer.append(next_packet)
-                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's' + '16s', seq_num, 1, 0, bytes(), bytes())
-                        self.socket.sendto(ack_packet, (self.dst_ip, self.dst_port))
+                        #form packet with ACK flag enables, send
+                        send_packet = self.form_packet(bytes(), seq_num, 1, 0)
+                        self.socket.sendto(send_packet, (self.dst_ip, self.dst_port))
 
             except Exception as e:
                 print("listener died!")
@@ -113,8 +122,19 @@ class Streamer:
     def unpack_packet(self, packet):
         return struct.unpack('iii' + str(len(packet) - 28) + 's' + '16s', packet)
 
+    #we pack so many times it may be easier to just make a function for it
+    def form_packet(self, data, sn, ack, fin):
+        packet = struct.pack('iii' + str(len(data)) + 's', sn, ack, fin, data)
+
+        hash_packet_data = self.GetHash(packet)  # lets try hashing the whole packet instead
+
+        #new packet with same data, but added packet hash code
+        hash_packet = struct.pack('iii' + str(len(data)) + 's' + '16s', sn, ack, fin,
+                                  data, hash_packet_data)
+        return hash_packet
+
     # Uses hashlib to create an md5 hash of the packet data.
-    # returns a constant 16 byte string
+    # returns a constant 16 byte string (account for in header buffer)
     def GetHash(self, data):
         byte_data = bytes(data)
         m = hashlib.md5(byte_data)
@@ -150,8 +170,8 @@ class Streamer:
 
         # Wait for acknowledgement every 0.01 secs
         while self.send_seq_num not in self.ack_list:
-            #send FIN packet
-            fin_packet = struct.pack('iii' + str(len(bytes())) + 's', self.send_seq_num, 0, 1, bytes())
+            #create packet with FIN code enabled
+            fin_packet = self.form_packet(bytes(), self.send_seq_num, 0, 1)
             self.socket.sendto(fin_packet, (self.dst_ip, self.dst_port))
 
             #wait for ACK
