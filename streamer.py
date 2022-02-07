@@ -50,8 +50,6 @@ class Streamer:
 
         for i in range(0, len(data_bytes), 1444):
             #multiple chunks of 1472 bytes (account for 28 byte buffer)
-            #len_data = len(data_bytes[0+i:1444+i])
-            #hash_data = self.GetHash(data_bytes) # generate hash from helper function GetHash() -> put in header
             send_packet = self.form_packet(data_bytes[0 + i:1444 + i], self.send_seq_num, 0, 0)
             self.socket.sendto(send_packet, (self.dst_ip, self.dst_port))
 
