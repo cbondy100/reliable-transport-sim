@@ -41,6 +41,9 @@ class Streamer:
             self.socket.sendto(packet, (self.dst_ip, self.dst_port))
             self.send_seq_num += 1
 
+    def listener(self):
+        #listener function declaration
+
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
         # your code goes here!  The code below should be changed!
