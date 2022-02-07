@@ -81,7 +81,7 @@ class Streamer:
                     self.closed = True
                     self.socket.stoprecv()
 
-                pkt = struct.pack('i' + str(len(data)) + 's' + 'i', self.send_seq_num, data,1)  # added '1' indicating its ACK
+                pkt = struct.pack('ii', self.send_seq_num,1)  # added '1' indicating its ACK
 
                 self.socket.sendto(pkt, addr)
 
