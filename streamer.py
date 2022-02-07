@@ -5,6 +5,7 @@ from lossy_socket import LossyUDP
 # do not import anything else from socket except INADDR_ANY
 from socket import INADDR_ANY
 
+import hashlib
 import struct
 import time
 
@@ -47,10 +48,11 @@ class Streamer:
 
         #break data_bytes into multiple chunks and send each one
 
-        for i in range(0, len(data_bytes), 1460):
-            #multiple chunks of 1472 bytes (account for 12 byte buffer)
-            len_data = len(data_bytes[0+i:1460+i])
-            packet = struct.pack('iii' + str(len_data) + 's', self.send_seq_num, 0, 0, data_bytes[0 + i:1460 + i])
+        for i in range(0, len(data_bytes), 1444):
+            #multiple chunks of 1472 bytes (account for 28 byte buffer)
+            len_data = len(data_bytes[0+i:1444+i])
+            hash_data = self.GetHash(data_bytes) # generate hash from helper function GetHash() -> put in header
+            packet = struct.pack('iii' + str(len_data) + 's' + '16s', self.send_seq_num, 0, 0, data_bytes[0 + i:1444 + i], hash_data)
             self.socket.sendto(packet, (self.dst_ip, self.dst_port))
 
             # Wait for acknowledgement every 0.01 secs
@@ -79,19 +81,27 @@ class Streamer:
                     ack = next_packet[1]
                     fin = next_packet[2]
                     data = next_packet[3]
+                    hash_data = next_packet[4]
 
                     if ack == 1:
                         #this means packet was an ACK, store ACK SN in list
                         self.ack_list.append(seq_num)
                     elif fin == 1:
                         #this means packet was FIN call, send ACK
-                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's', seq_num, 1, 0, bytes())
+                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's' + '16s', seq_num, 1, 0, bytes(), bytes())
                         self.socket.sendto(ack_packet, (self.dst_ip, self.dst_port))
 
                     else:
                         #packet was data, add to rec_buffer and send ACK where there is no data
+
+                        # BEFORE we do the above step: need to check hash, if it fails, skip below code
+                        # this will cause a timeout to occur and the send() function to resend packet
+                        hs = self.GetHash(data)
+                        if hash_data != hs:
+                            continue
+
                         self.rec_buffer.append(next_packet)
-                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's', seq_num, 1, 0, bytes())
+                        ack_packet = struct.pack('iii' + str(len(bytes())) + 's' + '16s', seq_num, 1, 0, bytes(), bytes())
                         self.socket.sendto(ack_packet, (self.dst_ip, self.dst_port))
 
             except Exception as e:
@@ -101,7 +111,14 @@ class Streamer:
     #seperate unpacking to make it easier and only one unpack call
     #Header: (SN, ACK, FIN, DATA)
     def unpack_packet(self, packet):
-        return struct.unpack('iii' + str(len(packet) - 12) + 's', packet)
+        return struct.unpack('iii' + str(len(packet) - 28) + 's' + '16s', packet)
+
+    # Uses hashlib to create an md5 hash of the packet data.
+    # returns a constant 16 byte string
+    def GetHash(self, data):
+        byte_data = bytes(data)
+        m = hashlib.md5(byte_data)
+        return m.digest()
 
     def recv(self) -> bytes:
         """Blocks (waits) if no data is ready to be read from the connection."""
@@ -143,7 +160,7 @@ class Streamer:
                 self.socket.sendto(fin_packet, (self.dst_ip, self.dst_port))
                 curr_time = 0
             time.sleep(0.01)
-            curr_time += 1;
+            curr_time += 1
 
         time.sleep(2)
         self.closed = True
