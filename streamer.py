@@ -109,7 +109,7 @@ class Streamer:
                 print(e)
 
     #seperate unpacking to make it easier and only one unpack call
-    #Header: (SN, ACK, FIN, DATA)
+    #Header: (SN, ACK, FIN, DATA, HASH_DATA)
     def unpack_packet(self, packet):
         return struct.unpack('iii' + str(len(packet) - 28) + 's' + '16s', packet)
 
