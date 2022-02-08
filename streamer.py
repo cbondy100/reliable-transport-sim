@@ -74,9 +74,7 @@ class Streamer:
                 packet, addr = self.socket.recvfrom()
                 if packet:
                     #unpack packet into fields
-                    #print("before unpacking")
                     next_packet = self.unpack_packet(packet)
-                    #print("after unpacking")
                     seq_num = next_packet[0]
                     ack = next_packet[1]
                     fin = next_packet[2]
@@ -168,13 +166,11 @@ class Streamer:
 
         # Wait for acknowledgement every 0.01 secs
         while self.send_seq_num not in self.ack_list:
-<<<<<<< HEAD
+
             #create packet with FIN code enabled
             fin_packet = self.form_packet(bytes(), self.send_seq_num, 0, 1)
-=======
+
             #send FIN packet
-            fin_packet = struct.pack('iii' + str(len(bytes())) + 's' + '16s', self.send_seq_num, 0, 1, bytes(), bytes())
->>>>>>> 72f51e23ff4b3fb8800ca5d3ba65ec24ec9a0fdb
             self.socket.sendto(fin_packet, (self.dst_ip, self.dst_port))
 
             #wait for ACK
